@@ -401,7 +401,7 @@ pub extern "C" fn grin_outputs_retrieve(
     unsafe { result_to_cstr(res, error) }
 }
 
-fn init_tx(
+fn init_send_tx(
     json_cfg: &str,
     password: &str,
     amount: u64,
@@ -423,9 +423,9 @@ fn init_tx(
         estimate_only: None,
         send_args: None,
     };
-    let slate = api.initiate_tx(tx_args)?;
-    api.tx_lock_outputs(&slate)?;
-    Ok(slate.serialize_to_version(target_slate_version)?)
+    let slate = api.init_send_tx(tx_args)?;
+    api.tx_lock_outputs(&slate, 0)?;
+    Ok(serde_json::to_string(&slate).expect("fail to serialize slate to json string"))
 }
 
 #[no_mangle]
@@ -443,7 +443,7 @@ pub extern "C" fn grin_init_tx(
         slate_version = Some(target_slate_version as u16);
     }
 
-    let res = init_tx(
+    let res = init_send_tx(
         &cstr_to_str(json_cfg),
         &cstr_to_str(password),
         amount,
@@ -477,15 +477,15 @@ fn send_tx(
         estimate_only: None,
         send_args: None,
     };
-    let slate = api.initiate_tx(args)?;
-    api.tx_lock_outputs(&slate)?;
+    let slate = api.init_send_tx(args)?;
+    api.tx_lock_outputs(&slate, 0)?;
 
     let adapter = HTTPWalletCommAdapter::new();
     match adapter.send_tx_sync(receiver_wallet_url, &slate) {
         Ok(mut slate) => {
             api.verify_slate_messages(&slate)?;
             api.finalize_tx(&mut slate)?;
-            Ok(slate.serialize_to_version(target_slate_version)?)
+            Ok(serde_json::to_string(&slate).expect("fail to serialize slate to json string"))
         }
         Err(e) => {
             api.cancel_tx(None, Some(slate.id))?;
@@ -595,7 +595,7 @@ fn tx_file_receive(
     let mut slate = adapter.receive_tx_async(&slate_file_path)?;
     api.verify_slate_messages(&slate)?;
     slate = api.receive_tx(&slate, Some(&config.account), Some(message.to_string()))?;
-    Ok(slate.serialize_to_version(Some(slate.version_info.orig_version))?)
+    Ok(serde_json::to_string(&slate).expect("fail to serialize slate to json string"))
 }
 
 #[no_mangle]
@@ -626,7 +626,7 @@ fn tx_file_finalize(
     let mut slate = adapter.receive_tx_async(slate_file_path)?;
     api.verify_slate_messages(&slate)?;
     slate = api.finalize_tx(&slate)?;
-    Ok(slate.serialize_to_version(Some(slate.version_info.orig_version))?)
+    Ok(serde_json::to_string(&slate).expect("fail to serialize slate to json string"))
 }
 
 #[no_mangle]
