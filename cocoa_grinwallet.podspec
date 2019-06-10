@@ -34,7 +34,7 @@ TODO: Add long description of the pod here.
   s.source_files = 'cocoa_grinwallet/Classes/**/*'
   s.vendored_libraries = 'cocoa_grinwallet/Library/*.a'
   s.dependency 'Result', '~> 4.1'
-  s.dependency 'ObjectMapper', '~> 3.4'
+  s.dependency 'ObjectMapper', '~> 3.5'
   s.dependency 'SwiftyJSON', '~> 5.0'
   
   # s.resource_bundles = {

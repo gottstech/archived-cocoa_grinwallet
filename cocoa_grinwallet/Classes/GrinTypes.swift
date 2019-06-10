@@ -236,15 +236,15 @@ public struct VersionCompatInfo: Mappable {
     public var version: Int = 0
     /// Original version this slate was converted from
     public var orig_version: Int = 0
-    /// Minimum version this slate is compatible with
-    public var min_compat_version: Int = 0
+    /// The grin block header version this slate is intended for
+    public var block_header_version: Int = 0
     
     public init?(map: Map) { }
     
     public mutating func mapping(map: Map) {
         version <- map["version"]
         orig_version <- map["orig_version"]
-        min_compat_version <- map["min_compat_version"]
+        block_header_version <- map["block_header_version"]
     }
 }
 
