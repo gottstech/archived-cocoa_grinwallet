@@ -33,7 +33,7 @@ use grin_wallet_impls::{
     HTTPWalletCommAdapter, LMDBBackend, WalletSeed,
 };
 use grin_wallet_libwallet::api_impl::types::InitTxArgs;
-use grin_wallet_libwallet::types::{NodeClient, WalletInst};
+use grin_wallet_libwallet::{NodeClient, WalletInst};
 use grin_wallet_util::grin_core::global::ChainTypes;
 use grin_wallet_util::grin_keychain::ExtKeychain;
 use grin_wallet_util::grin_util::{file::get_first_line, Mutex};
@@ -96,6 +96,7 @@ struct MobileWalletCfg {
     chain_type: String,
     data_dir: String,
     node_api_addr: String,
+    password: String,
 }
 
 impl MobileWalletCfg {
@@ -180,13 +181,14 @@ pub extern "C" fn grin_wallet_init(
     unsafe { result_to_cstr(res, error) }
 }
 
-fn wallet_init_recover(json_cfg: &str, mnemonic: &str, password: &str) -> Result<String, Error> {
-    let wallet_config = new_wallet_config(MobileWalletCfg::from_str(json_cfg)?)?;
-    WalletSeed::recover_from_phrase(&wallet_config, mnemonic, password)?;
+fn wallet_init_recover(json_cfg: &str, mnemonic: &str) -> Result<String, Error> {
+    let config = MobileWalletCfg::from_str(json_cfg)?;
+    let wallet_config = new_wallet_config(config.clone())?;
+    WalletSeed::recover_from_phrase(&wallet_config, mnemonic, config.password.as_str())?;
     let node_api_secret = get_first_line(wallet_config.node_api_secret_path.clone());
     let node_client = HTTPNodeClient::new(&wallet_config.check_node_api_http_addr, node_api_secret);
     let _: LMDBBackend<HTTPNodeClient, ExtKeychain> =
-        LMDBBackend::new(wallet_config, password, node_client)?;
+        LMDBBackend::new(wallet_config, config.password.as_str(), node_client)?;
     Ok("OK".to_owned())
 }
 
@@ -194,20 +196,17 @@ fn wallet_init_recover(json_cfg: &str, mnemonic: &str, password: &str) -> Result
 pub extern "C" fn grin_wallet_init_recover(
     json_cfg: *const c_char,
     mnemonic: *const c_char,
-    password: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
     let res = wallet_init_recover(
         &cstr_to_str(json_cfg),
         &cstr_to_str(mnemonic),
-        &cstr_to_str(password),
     );
     unsafe { result_to_cstr(res, error) }
 }
 
 fn wallet_restore(
     json_cfg: &str,
-    password: &str,
     start_index: u64,
     batch_size: u64,
 ) -> Result<String, Error> {
@@ -215,7 +214,7 @@ fn wallet_restore(
     let wallet_config = new_wallet_config(config.clone())?;
     let node_api_secret = get_first_line(wallet_config.node_api_secret_path.clone());
     let node_client = HTTPNodeClient::new(&wallet_config.check_node_api_http_addr, node_api_secret);
-    let wallet = instantiate_wallet(wallet_config, node_client, password, &config.account)?;
+    let wallet = instantiate_wallet(wallet_config, node_client, config.password.as_str(), &config.account)?;
     let api = Owner::new(wallet.clone());
 
     let (highest_index, last_retrieved_index) = api
@@ -231,14 +230,12 @@ fn wallet_restore(
 #[no_mangle]
 pub extern "C" fn grin_wallet_restore(
     json_cfg: *const c_char,
-    password: *const c_char,
     start_index: u64,
     batch_size: u64,
     error: *mut u8,
 ) -> *const c_char {
     let res = wallet_restore(
         &cstr_to_str(json_cfg),
-        &cstr_to_str(password),
         start_index,
         batch_size,
     );
@@ -247,14 +244,14 @@ pub extern "C" fn grin_wallet_restore(
 
 fn wallet_check(
     json_cfg: &str,
-    password: &str,
     start_index: u64,
     batch_size: u64,
+    update_outputs: bool,
 ) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let (highest_index, last_retrieved_index) = api
-        .check_repair_batch(true, start_index, batch_size)
+        .check_repair_batch(true, start_index, batch_size, update_outputs)
         .map_err(|e| Error::from(e))?;
 
     Ok(json!({
@@ -267,39 +264,38 @@ fn wallet_check(
 #[no_mangle]
 pub extern "C" fn grin_wallet_check(
     json_cfg: *const c_char,
-    password: *const c_char,
     start_index: u64,
     batch_size: u64,
+    update_outputs: bool,
     error: *mut u8,
 ) -> *const c_char {
     let res = wallet_check(
         &cstr_to_str(json_cfg),
-        &cstr_to_str(password),
         start_index,
         batch_size,
+        update_outputs,
     );
     unsafe { result_to_cstr(res, error) }
 }
 
-fn get_wallet_mnemonic(json_cfg: &str, password: &str) -> Result<String, Error> {
-    let wallet_config = new_wallet_config(MobileWalletCfg::from_str(json_cfg)?)?;
-    let seed = WalletSeed::from_file(&wallet_config, password)?;
+fn get_wallet_mnemonic(json_cfg: &str) -> Result<String, Error> {
+    let config = MobileWalletCfg::from_str(json_cfg)?;
+    let wallet_config = new_wallet_config(config.clone())?;
+    let seed = WalletSeed::from_file(&wallet_config, config.password.as_str())?;
     seed.to_mnemonic()
 }
 
 #[no_mangle]
 pub extern "C" fn grin_get_wallet_mnemonic(
     json_cfg: *const c_char,
-    password: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
-    let res = get_wallet_mnemonic(&cstr_to_str(json_cfg), &cstr_to_str(password));
+    let res = get_wallet_mnemonic(&cstr_to_str(json_cfg));
     unsafe { result_to_cstr(res, error) }
 }
 
 fn get_wallet_instance(
     config: MobileWalletCfg,
-    password: &str,
 ) -> Result<Arc<Mutex<WalletInst<impl NodeClient, ExtKeychain>>>, Error> {
     let wallet_config = new_wallet_config(config.clone())?;
     let node_api_secret = get_first_line(wallet_config.node_api_secret_path.clone());
@@ -308,13 +304,13 @@ fn get_wallet_instance(
     instantiate_wallet(
         wallet_config,
         node_client,
-        password,
+        config.password.as_str(),
         config.account.as_str(),
     )
 }
 
-fn get_balance(json_cfg: &str, password: &str) -> Result<(bool, String), Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+fn get_balance(json_cfg: &str) -> Result<(bool, String), Error> {
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let (validated, wallet_info) = api.retrieve_summary_info(true, MINIMUM_CONFIRMATIONS)?;
     Ok((validated, serde_json::to_string(&wallet_info).unwrap()))
@@ -323,15 +319,14 @@ fn get_balance(json_cfg: &str, password: &str) -> Result<(bool, String), Error> 
 #[no_mangle]
 pub extern "C" fn grin_get_balance(
     json_cfg: *const c_char,
-    password: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
-    let res = get_balance(&cstr_to_str(json_cfg), &cstr_to_str(password));
+    let res = get_balance(&cstr_to_str(json_cfg));
     unsafe { result2_to_cstr(res, error) }
 }
 
-fn tx_retrieve(json_cfg: &str, password: &str, tx_slate_id: &str) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+fn tx_retrieve(json_cfg: &str, tx_slate_id: &str) -> Result<String, Error> {
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let uuid = Uuid::parse_str(tx_slate_id).map_err(|e| ErrorKind::GenericError(e.to_string()))?;
     let txs = api.retrieve_txs(true, None, Some(uuid))?;
@@ -341,20 +336,18 @@ fn tx_retrieve(json_cfg: &str, password: &str, tx_slate_id: &str) -> Result<Stri
 #[no_mangle]
 pub extern "C" fn grin_tx_retrieve(
     json_cfg: *const c_char,
-    password: *const c_char,
     tx_slate_id: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
     let res = tx_retrieve(
         &cstr_to_str(json_cfg),
-        &cstr_to_str(password),
         &cstr_to_str(tx_slate_id),
     );
     unsafe { result_to_cstr(res, error) }
 }
 
-fn txs_retrieve(json_cfg: &str, password: &str) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+fn txs_retrieve(json_cfg: &str) -> Result<String, Error> {
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
 
     match api.retrieve_txs(true, None, None) {
@@ -366,15 +359,14 @@ fn txs_retrieve(json_cfg: &str, password: &str) -> Result<String, Error> {
 #[no_mangle]
 pub extern "C" fn grin_txs_retrieve(
     state_json: *const c_char,
-    password: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
-    let res = txs_retrieve(&cstr_to_str(state_json), &cstr_to_str(password));
+    let res = txs_retrieve(&cstr_to_str(state_json));
     unsafe { result_to_cstr(res, error) }
 }
 
-fn outputs_retrieve(json_cfg: &str, password: &str, tx_id: Option<u32>) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+fn outputs_retrieve(json_cfg: &str, tx_id: Option<u32>) -> Result<String, Error> {
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let outputs = api.retrieve_outputs(true, true, tx_id)?;
     Ok(serde_json::to_string(&outputs).unwrap())
@@ -383,33 +375,30 @@ fn outputs_retrieve(json_cfg: &str, password: &str, tx_id: Option<u32>) -> Resul
 #[no_mangle]
 pub extern "C" fn grin_output_retrieve(
     json_cfg: *const c_char,
-    password: *const c_char,
     tx_id: u32,
     error: *mut u8,
 ) -> *const c_char {
-    let res = outputs_retrieve(&cstr_to_str(json_cfg), &cstr_to_str(password), Some(tx_id));
+    let res = outputs_retrieve(&cstr_to_str(json_cfg), Some(tx_id));
     unsafe { result_to_cstr(res, error) }
 }
 
 #[no_mangle]
 pub extern "C" fn grin_outputs_retrieve(
     json_cfg: *const c_char,
-    password: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
-    let res = outputs_retrieve(&cstr_to_str(json_cfg), &cstr_to_str(password), None);
+    let res = outputs_retrieve(&cstr_to_str(json_cfg), None);
     unsafe { result_to_cstr(res, error) }
 }
 
 fn init_send_tx(
     json_cfg: &str,
-    password: &str,
     amount: u64,
     selection_strategy: &str,
     target_slate_version: Option<u16>,
     message: &str,
 ) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let tx_args = InitTxArgs {
         src_acct_name: None,
@@ -431,7 +420,6 @@ fn init_send_tx(
 #[no_mangle]
 pub extern "C" fn grin_init_tx(
     json_cfg: *const c_char,
-    password: *const c_char,
     amount: u64,
     selection_strategy: *const c_char,
     target_slate_version: i16,
@@ -445,7 +433,6 @@ pub extern "C" fn grin_init_tx(
 
     let res = init_send_tx(
         &cstr_to_str(json_cfg),
-        &cstr_to_str(password),
         amount,
         &cstr_to_str(selection_strategy),
         slate_version,
@@ -456,14 +443,13 @@ pub extern "C" fn grin_init_tx(
 
 fn send_tx(
     json_cfg: &str,
-    password: &str,
     amount: u64,
     receiver_wallet_url: &str,
     selection_strategy: &str,
     target_slate_version: Option<u16>,
     message: &str,
 ) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let args = InitTxArgs {
         src_acct_name: None,
@@ -497,7 +483,6 @@ fn send_tx(
 #[no_mangle]
 pub extern "C" fn grin_send_tx(
     json_cfg: *const c_char,
-    password: *const c_char,
     amount: u64,
     receiver_wallet_url: *const c_char,
     selection_strategy: *const c_char,
@@ -512,7 +497,6 @@ pub extern "C" fn grin_send_tx(
 
     let res = send_tx(
         &cstr_to_str(json_cfg),
-        &cstr_to_str(password),
         amount,
         &cstr_to_str(receiver_wallet_url),
         &cstr_to_str(selection_strategy),
@@ -522,8 +506,8 @@ pub extern "C" fn grin_send_tx(
     unsafe { result_to_cstr(res, error) }
 }
 
-fn cancel_tx(json_cfg: &str, password: &str, id: u32) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+fn cancel_tx(json_cfg: &str, id: u32) -> Result<String, Error> {
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     api.cancel_tx(Some(id), None)?;
     Ok("OK".to_owned())
@@ -532,16 +516,15 @@ fn cancel_tx(json_cfg: &str, password: &str, id: u32) -> Result<String, Error> {
 #[no_mangle]
 pub extern "C" fn grin_cancel_tx(
     json_cfg: *const c_char,
-    password: *const c_char,
     id: u32,
     error: *mut u8,
 ) -> *const c_char {
-    let res = cancel_tx(&cstr_to_str(json_cfg), &cstr_to_str(password), id);
+    let res = cancel_tx(&cstr_to_str(json_cfg), id);
     unsafe { result_to_cstr(res, error) }
 }
 
-fn post_tx(json_cfg: &str, password: &str, tx_slate_id: &str) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+fn post_tx(json_cfg: &str, tx_slate_id: &str) -> Result<String, Error> {
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let uuid = Uuid::parse_str(tx_slate_id).map_err(|e| ErrorKind::GenericError(e.to_string()))?;
     let (validated, txs) = api.retrieve_txs(true, None, Some(uuid))?;
@@ -570,13 +553,11 @@ fn post_tx(json_cfg: &str, password: &str, tx_slate_id: &str) -> Result<String, 
 #[no_mangle]
 pub extern "C" fn grin_post_tx(
     json_cfg: *const c_char,
-    password: *const c_char,
     tx_slate_id: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
     let res = post_tx(
         &cstr_to_str(json_cfg),
-        &cstr_to_str(password),
         &cstr_to_str(tx_slate_id),
     );
     unsafe { result_to_cstr(res, error) }
@@ -584,13 +565,12 @@ pub extern "C" fn grin_post_tx(
 
 fn tx_file_receive(
     json_cfg: &str,
-    password: &str,
     slate_file_path: &str,
     message: &str,
 ) -> Result<String, Error> {
     let config = MobileWalletCfg::from_str(json_cfg)?;
-    let wallet = get_wallet_instance(config.clone(), password)?;
-    let api = Foreign::new(wallet);
+    let wallet = get_wallet_instance(config.clone())?;
+    let api = Foreign::new(wallet, None);
     let adapter = FileWalletCommAdapter::new();
     let mut slate = adapter.receive_tx_async(&slate_file_path)?;
     api.verify_slate_messages(&slate)?;
@@ -601,14 +581,12 @@ fn tx_file_receive(
 #[no_mangle]
 pub extern "C" fn grin_tx_file_receive(
     json_cfg: *const c_char,
-    password: *const c_char,
     slate_file_path: *const c_char,
     message: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
     let res = tx_file_receive(
         &cstr_to_str(json_cfg),
-        &cstr_to_str(password),
         &cstr_to_str(slate_file_path),
         &cstr_to_str(message),
     );
@@ -617,10 +595,9 @@ pub extern "C" fn grin_tx_file_receive(
 
 fn tx_file_finalize(
     json_cfg: &str,
-    password: &str,
     slate_file_path: &str,
 ) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let adapter = FileWalletCommAdapter::new();
     let mut slate = adapter.receive_tx_async(slate_file_path)?;
@@ -632,20 +609,18 @@ fn tx_file_finalize(
 #[no_mangle]
 pub extern "C" fn grin_tx_file_finalize(
     json_cfg: *const c_char,
-    password: *const c_char,
     slate_file_path: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
     let res = tx_file_finalize(
         &cstr_to_str(json_cfg),
-        &cstr_to_str(password),
         &cstr_to_str(slate_file_path),
     );
     unsafe { result_to_cstr(res, error) }
 }
 
-fn chain_height(json_cfg: &str, password: &str) -> Result<String, Error> {
-    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?, password)?;
+fn chain_height(json_cfg: &str) -> Result<String, Error> {
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
     let height = api.node_height()?;
     Ok(serde_json::to_string(&height).unwrap())
@@ -654,9 +629,8 @@ fn chain_height(json_cfg: &str, password: &str) -> Result<String, Error> {
 #[no_mangle]
 pub extern "C" fn grin_chain_height(
     json_cfg: *const c_char,
-    password: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
-    let res = chain_height(&cstr_to_str(json_cfg), &cstr_to_str(password));
+    let res = chain_height(&cstr_to_str(json_cfg));
     unsafe { result_to_cstr(res, error) }
 }

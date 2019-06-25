@@ -40,13 +40,11 @@ const char* grin_wallet_init(
 const char* grin_wallet_init_recover(
     const char* json_cfg,
     const char* mnemonic,
-    const char* password,
     uint8_t *error
 );
 
 const char* grin_wallet_restore(
     const char* json_cfg,
-    const char* password,
     uint64_t start_index,
     uint64_t batch_size,
     uint8_t *error
@@ -54,53 +52,46 @@ const char* grin_wallet_restore(
 
 const char* grin_wallet_check(
     const char* json_cfg,
-    const char* password,
     uint64_t start_index,
     uint64_t batch_size,
+    bool update_outputs,
     uint8_t *error
 );
 
 const char* grin_get_wallet_mnemonic(
     const char* json_cfg,
-    const char* password,
     uint8_t *error
 );
 
 const char* grin_get_balance(
     const char* json_cfg,
-    const char* password,
     uint8_t *error
 );
 
 const char* grin_tx_retrieve(
     const char* json_cfg,
-    const char* password,
     const char* tx_slate_id,
     uint8_t *error
 );
 
 const char* grin_txs_retrieve(
     const char* json_cfg,
-    const char* password,
     uint8_t *error
 );
 
 const char* grin_output_retrieve(
     const char* json_cfg,
-    const char* password,
     uint32_t id,
     uint8_t *error
 );
 
 const char* grin_outputs_retrieve(
     const char* json_cfg,
-    const char* password,
     uint8_t *error
 );
 
 const char* grin_init_tx(
     const char* json_cfg,
-    const char* password,
     uint64_t amount,
     const char* selection_strategy,
     int16_t target_slate_version,
@@ -110,7 +101,6 @@ const char* grin_init_tx(
 
 const char* grin_send_tx(
     const char* json_cfg,
-    const char* password,
     uint64_t amount,
     const char* receiver_wallet_url,
     const char* selection_strategy,
@@ -121,21 +111,18 @@ const char* grin_send_tx(
 
 const char* grin_cancel_tx(
     const char* json_cfg,
-    const char* password,
     uint32_t id,
     uint8_t *error
 );
 
 const char* grin_post_tx(
     const char* json_cfg,
-    const char* password,
     const char* tx_slate_id,
     uint8_t *error
 );
 
 const char* grin_tx_file_receive(
     const char* json_cfg,
-    const char* password,
     const char* slate_file_path,
     const char* message,
     uint8_t *error
@@ -143,14 +130,12 @@ const char* grin_tx_file_receive(
 
 const char*  grin_tx_file_finalize(
     const char* json_cfg,
-    const char* password,
     const char* slate_file_path,
     uint8_t *error
 );
 
 const char* grin_chain_height(
     const char* json_cfg,
-    const char* password,
     uint8_t *error
 );
 
