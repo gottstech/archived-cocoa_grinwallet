@@ -164,7 +164,7 @@ pub extern "C" fn grin_init_wallet_seed(error: *mut u8) -> *const c_char {
 fn wallet_init(json_cfg: &str, password: &str) -> Result<String, Error> {
     let wallet_config = new_wallet_config(MobileWalletCfg::from_str(json_cfg)?)?;
     let node_api_secret = get_first_line(wallet_config.node_api_secret_path.clone());
-    let seed = WalletSeed::init_file(&wallet_config, 32, None, password)?;
+    let seed = WalletSeed::init_file(&wallet_config, 32, None, password, false)?;
     let node_client = HTTPNodeClient::new(&wallet_config.check_node_api_http_addr, node_api_secret);
     let _: LMDBBackend<HTTPNodeClient, ExtKeychain> =
         LMDBBackend::new(wallet_config, password, node_client)?;
