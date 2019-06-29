@@ -97,6 +97,7 @@ struct MobileWalletCfg {
     data_dir: String,
     node_api_addr: String,
     password: String,
+    minimum_confirmations: u64,
 }
 
 impl MobileWalletCfg {
@@ -217,12 +218,13 @@ fn wallet_restore(
     let wallet = instantiate_wallet(wallet_config, node_client, config.password.as_str(), &config.account)?;
     let api = Owner::new(wallet.clone());
 
-    let (highest_index, last_retrieved_index) = api
+    let (highest_index, last_retrieved_index, num_of_found) = api
         .restore_batch(start_index, batch_size)
         .map_err(|e| Error::from(e))?;
     Ok(json!({
         "highestIndex": highest_index,
         "lastRetrievedIndex": last_retrieved_index,
+        "numberOfFound": num_of_found,
     })
     .to_string())
 }
@@ -506,20 +508,21 @@ pub extern "C" fn grin_send_tx(
     unsafe { result_to_cstr(res, error) }
 }
 
-fn cancel_tx(json_cfg: &str, id: u32) -> Result<String, Error> {
+fn cancel_tx(json_cfg: &str, tx_slate_id: &str) -> Result<String, Error> {
+    let uuid = Uuid::parse_str(tx_slate_id).map_err(|e| ErrorKind::GenericError(e.to_string()))?;
     let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
     let api = Owner::new(wallet);
-    api.cancel_tx(Some(id), None)?;
+    api.cancel_tx(None, Some(uuid))?;
     Ok("OK".to_owned())
 }
 
 #[no_mangle]
 pub extern "C" fn grin_cancel_tx(
     json_cfg: *const c_char,
-    id: u32,
+    tx_slate_id: *const c_char,
     error: *mut u8,
 ) -> *const c_char {
-    let res = cancel_tx(&cstr_to_str(json_cfg), id);
+    let res = cancel_tx(&cstr_to_str(json_cfg), &cstr_to_str(tx_slate_id));
     unsafe { result_to_cstr(res, error) }
 }
 

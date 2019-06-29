@@ -111,7 +111,7 @@ const char* grin_send_tx(
 
 const char* grin_cancel_tx(
     const char* json_cfg,
-    uint32_t id,
+    const char* tx_slate_id,
     uint8_t *error
 );
 

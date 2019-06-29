@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'cocoa_grinwallet'
-  s.version          = '0.1.0'
+  s.version          = '0.0.1'
   s.summary          = 'Grin Wallet IOS Libs.'
 
 # This description is used to generate tags and improve search results.
@@ -33,9 +33,6 @@ TODO: Add long description of the pod here.
 
   s.source_files = 'cocoa_grinwallet/Classes/**/*'
   s.vendored_libraries = 'cocoa_grinwallet/Library/*.a'
-  s.dependency 'Result', '~> 4.1'
-  s.dependency 'ObjectMapper', '~> 3.5'
-  s.dependency 'SwiftyJSON', '~> 5.0'
   
   # s.resource_bundles = {
   #   'cocoa_grinwallet' => ['cocoa_grinwallet/Assets/*.png']
