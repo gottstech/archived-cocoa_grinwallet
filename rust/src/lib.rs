@@ -1,9 +1,5 @@
 // Copyright 2019 Ivan Sorokin.
 //
-// ( Origin from https://github.com/cyclefortytwo/ironbelly/blob/master/rust/src/lib.rs,
-//   And refactored & optimized & enhanced by Gotts Developers: https://github.com/gottstech.
-// )
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Libs External API Definition
+//! Libs Wallet External API Definition
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -138,7 +134,7 @@ fn new_wallet_config(config: MobileWalletCfg) -> Result<WalletConfig, Error> {
 
 fn check_password(json_cfg: &str, password: &str) -> Result<String, Error> {
     let wallet_config = new_wallet_config(MobileWalletCfg::from_str(json_cfg)?)?;
-    WalletSeed::from_file(&wallet_config, password).map_err(|e| Error::from(e))?;
+    WalletSeed::from_file(&wallet_config.data_file_dir, password).map_err(|e| Error::from(e))?;
     Ok("OK".to_owned())
 }
 
@@ -165,7 +161,7 @@ pub extern "C" fn grin_init_wallet_seed(error: *mut u8) -> *const c_char {
 fn wallet_init(json_cfg: &str, password: &str) -> Result<String, Error> {
     let wallet_config = new_wallet_config(MobileWalletCfg::from_str(json_cfg)?)?;
     let node_api_secret = get_first_line(wallet_config.node_api_secret_path.clone());
-    let seed = WalletSeed::init_file(&wallet_config, 32, None, password, false)?;
+    let seed = WalletSeed::init_file(&wallet_config.data_file_dir, 32, None, password, false)?;
     let node_client = HTTPNodeClient::new(&wallet_config.check_node_api_http_addr, node_api_secret);
     let _: LMDBBackend<HTTPNodeClient, ExtKeychain> =
         LMDBBackend::new(wallet_config, password, node_client)?;
@@ -185,7 +181,7 @@ pub extern "C" fn grin_wallet_init(
 fn wallet_init_recover(json_cfg: &str, mnemonic: &str) -> Result<String, Error> {
     let config = MobileWalletCfg::from_str(json_cfg)?;
     let wallet_config = new_wallet_config(config.clone())?;
-    WalletSeed::recover_from_phrase(&wallet_config, mnemonic, config.password.as_str())?;
+    WalletSeed::recover_from_phrase(&wallet_config.data_file_dir, mnemonic, config.password.as_str())?;
     let node_api_secret = get_first_line(wallet_config.node_api_secret_path.clone());
     let node_client = HTTPNodeClient::new(&wallet_config.check_node_api_http_addr, node_api_secret);
     let _: LMDBBackend<HTTPNodeClient, ExtKeychain> =
@@ -283,7 +279,7 @@ pub extern "C" fn grin_wallet_check(
 fn get_wallet_mnemonic(json_cfg: &str) -> Result<String, Error> {
     let config = MobileWalletCfg::from_str(json_cfg)?;
     let wallet_config = new_wallet_config(config.clone())?;
-    let seed = WalletSeed::from_file(&wallet_config, config.password.as_str())?;
+    let seed = WalletSeed::from_file(&wallet_config.data_file_dir, config.password.as_str())?;
     seed.to_mnemonic()
 }
 

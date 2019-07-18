@@ -1,9 +1,5 @@
 // Copyright 2019 Ivan Sorokin.
 //
-// ( Origin from https://github.com/cyclefortytwo/ironbelly
-//   And refactored & optimized & enhanced by Gotts Developers: https://github.com/gottstech.
-// )
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at

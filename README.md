@@ -37,10 +37,10 @@ Apache License v2.0.
 
 ## Credits
 
-The code was put together using both the [Ironbelly](https://github.com/cyclefortytwo/ironbelly) and [Vite GrinWallet](https://github.com/vitelabs/Vite_GrinWallet) as the reference.
+The code was using the [Ironbelly](https://github.com/cyclefortytwo/ironbelly) as the reference.
 
 The related code taken with thanks and respect, with license details in all derived source files.
 
-Both Ironbelly and Vite GrinWallet, including this project, are using same open source licence: Apache Licence v2.0.
+Both Ironbelly and this project, are using same open source licence: Apache Licence v2.0.
 
 
