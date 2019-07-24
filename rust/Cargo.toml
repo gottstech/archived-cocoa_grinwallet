@@ -21,13 +21,14 @@ serde_json = "1"
 uuid = "0.7.4"
 
 # Normal using
-grin_wallet = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.0" }
-grin_wallet_api = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.0" }
-grin_wallet_config = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.0" }
-grin_wallet_controller = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.0" }
-grin_wallet_impls = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.0" }
-grin_wallet_libwallet = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.0" }
-grin_wallet_util = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.0" }
+grin_wallet = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.1-alpha-1" }
+grin_wallet_api = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.1-alpha-1" }
+grin_wallet_config = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.1-alpha-1" }
+grin_wallet_controller = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.1-alpha-1" }
+grin_wallet_impls = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.1-alpha-1" }
+grin_wallet_libwallet = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.1-alpha-1" }
+grin_wallet_util = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.1-alpha-1" }
+grin_wallet_relay = { git = "https://github.com/gottstech/grin-wallet", tag = "v2.0.1-alpha-1" }
 
 # In case of local development
 #grin_wallet_api = { path = "../../grin-wallet/api" }
@@ -36,6 +37,7 @@ grin_wallet_util = { git = "https://github.com/gottstech/grin-wallet", tag = "v2
 #grin_wallet_impls = { path = "../../grin-wallet/impls" }
 #grin_wallet_libwallet = { path = "../../grin-wallet/libwallet" }
 #grin_wallet_util = { path = "../../grin-wallet/util" }
+#grin_wallet_relay = { path = "../../grin-wallet/grinrelay" }
 
 [build-dependencies]
 built = "0.3"

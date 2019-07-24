@@ -17,22 +17,26 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+use std::sync::mpsc::channel;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
 use grin_wallet_api::{Foreign, Owner};
-use grin_wallet_config::WalletConfig;
+use grin_wallet_config::{GrinRelayConfig, WalletConfig};
 use grin_wallet_impls::{
     instantiate_wallet, Error, ErrorKind, FileWalletCommAdapter, HTTPNodeClient,
-    HTTPWalletCommAdapter, LMDBBackend, WalletSeed,
+    HTTPWalletCommAdapter, LMDBBackend, GrinrelayWalletCommAdapter, WalletSeed,
 };
 use grin_wallet_libwallet::api_impl::types::InitTxArgs;
 use grin_wallet_libwallet::{NodeClient, WalletInst};
 use grin_wallet_util::grin_core::global::ChainTypes;
 use grin_wallet_util::grin_keychain::ExtKeychain;
-use grin_wallet_util::grin_util::{file::get_first_line, Mutex};
+use grin_wallet_util::grin_util::{file::get_first_line, Mutex, ZeroingString};
+use grin_wallet_controller::grinrelay_listener;
 
 /// Default minimum confirmation
 pub const MINIMUM_CONFIRMATIONS: u64 = 10;
@@ -94,6 +98,7 @@ struct MobileWalletCfg {
     node_api_addr: String,
     password: String,
     minimum_confirmations: u64,
+    grinrelay_config: Option<GrinRelayConfig>,
 }
 
 impl MobileWalletCfg {
@@ -118,17 +123,18 @@ fn new_wallet_config(config: MobileWalletCfg) -> Result<WalletConfig, Error> {
         chain_type: Some(chain_type),
         api_listen_interface: "127.0.0.1".to_string(),
         api_listen_port: 3415,
+        owner_api_listen_port: Some(3420),
         api_secret_path: Some(".api_secret".to_string()),
         node_api_secret_path: Some(config.data_dir.clone() + "/.api_secret"),
         check_node_api_http_addr: config.node_api_addr,
+        owner_api_include_foreign: Some(false),
         data_file_dir: config.data_dir + "/wallet_data",
+        no_commit_cache: Some(false),
         tls_certificate_file: None,
         tls_certificate_key: None,
         dark_background_color_scheme: Some(true),
         keybase_notify_ttl: Some(1440),
-        no_commit_cache: Some(false),
-        owner_api_include_foreign: Some(false),
-        owner_api_listen_port: Some(3420),
+        grinrelay_config: Some(config.grinrelay_config.clone().unwrap_or_default()),
     })
 }
 
@@ -158,10 +164,11 @@ pub extern "C" fn grin_init_wallet_seed(error: *mut u8) -> *const c_char {
     unsafe { result_to_cstr(res, error) }
 }
 
-fn wallet_init(json_cfg: &str, password: &str) -> Result<String, Error> {
+fn wallet_init(json_cfg: &str, password: &str, is_12_phrases: bool) -> Result<String, Error> {
     let wallet_config = new_wallet_config(MobileWalletCfg::from_str(json_cfg)?)?;
     let node_api_secret = get_first_line(wallet_config.node_api_secret_path.clone());
-    let seed = WalletSeed::init_file(&wallet_config.data_file_dir, 32, None, password, false)?;
+    let seed_length = if is_12_phrases { 16 } else { 32 };
+    let seed = WalletSeed::init_file(&wallet_config.data_file_dir, seed_length, None, password, false)?;
     let node_client = HTTPNodeClient::new(&wallet_config.check_node_api_http_addr, node_api_secret);
     let _: LMDBBackend<HTTPNodeClient, ExtKeychain> =
         LMDBBackend::new(wallet_config, password, node_client)?;
@@ -172,9 +179,10 @@ fn wallet_init(json_cfg: &str, password: &str) -> Result<String, Error> {
 pub extern "C" fn grin_wallet_init(
     json_cfg: *const c_char,
     password: *const c_char,
+    is_12_phrases: bool,
     error: *mut u8,
 ) -> *const c_char {
-    let res = wallet_init(&cstr_to_str(json_cfg), &cstr_to_str(password));
+    let res = wallet_init(&cstr_to_str(json_cfg), &cstr_to_str(password), is_12_phrases);
     unsafe { result_to_cstr(res, error) }
 }
 
@@ -198,6 +206,34 @@ pub extern "C" fn grin_wallet_init_recover(
     let res = wallet_init_recover(
         &cstr_to_str(json_cfg),
         &cstr_to_str(mnemonic),
+    );
+    unsafe { result_to_cstr(res, error) }
+}
+
+fn wallet_change_password(
+    json_cfg: &str,
+    old_password: &str,
+    new_password: &str,
+) -> Result<String, Error> {
+    let wallet = get_wallet_instance(MobileWalletCfg::from_str(json_cfg)?)?;
+    let api = Owner::new(wallet);
+
+    api.change_password(&Some(ZeroingString::from(old_password)), new_password)
+        .map_err(|e| Error::from(e))?;
+    Ok("OK".to_owned())
+}
+
+#[no_mangle]
+pub extern "C" fn grin_wallet_change_password(
+    json_cfg: *const c_char,
+    old_password: *const c_char,
+    new_password: *const c_char,
+    error: *mut u8,
+) -> *const c_char {
+    let res = wallet_change_password(
+        &cstr_to_str(json_cfg),
+        &cstr_to_str(old_password),
+        &cstr_to_str(new_password),
     );
     unsafe { result_to_cstr(res, error) }
 }
@@ -439,7 +475,7 @@ pub extern "C" fn grin_init_tx(
     unsafe { result_to_cstr(res, error) }
 }
 
-fn send_tx(
+fn send_tx_by_http(
     json_cfg: &str,
     amount: u64,
     receiver_wallet_url: &str,
@@ -461,18 +497,92 @@ fn send_tx(
         estimate_only: None,
         send_args: None,
     };
-    let slate = api.init_send_tx(args)?;
-    api.tx_lock_outputs(&slate, 0)?;
+    let slate_r1 = api.init_send_tx(args)?;
 
     let adapter = HTTPWalletCommAdapter::new();
-    match adapter.send_tx_sync(receiver_wallet_url, &slate) {
-        Ok(mut slate) => {
+    match adapter.send_tx_sync(receiver_wallet_url, &slate_r1) {
+        Ok(slate) => {
             api.verify_slate_messages(&slate)?;
-            api.finalize_tx(&mut slate)?;
-            Ok(serde_json::to_string(&slate).expect("fail to serialize slate to json string"))
+            api.tx_lock_outputs(&slate_r1, 0)?;
+
+            let finalized_slate = api.finalize_tx(&slate);
+            if finalized_slate.is_err() {
+                api.cancel_tx(None, Some(slate_r1.id))?;
+            }
+            let finalized_slate = finalized_slate?;
+
+            let res = api.post_tx(&finalized_slate.tx, false);
+            if res.is_err() {
+                api.cancel_tx(None, Some(slate_r1.id))?;
+                res?;
+            }
+
+            Ok(serde_json::to_string(&finalized_slate).expect("fail to serialize slate to json string"))
         }
         Err(e) => {
-            api.cancel_tx(None, Some(slate.id))?;
+            Err(Error::from(e))
+        }
+    }
+}
+
+fn send_tx_by_relay(
+    json_cfg: &str,
+    amount: u64,
+    receiver_addr: &str,
+    selection_strategy: &str,
+    target_slate_version: Option<u16>,
+    message: &str,
+) -> Result<String, Error> {
+    let config = MobileWalletCfg::from_str(json_cfg)?;
+    let wallet = get_wallet_instance(config.clone())?;
+    let api = Owner::new(wallet.clone());
+    let args = InitTxArgs {
+        src_acct_name: None,
+        amount,
+        minimum_confirmations: MINIMUM_CONFIRMATIONS,
+        max_outputs: 500,
+        num_change_outputs: 1,
+        selection_strategy: selection_strategy.to_string(),
+        message: Some(message.to_string()),
+        target_slate_version,
+        estimate_only: None,
+        send_args: None,
+    };
+    let slate_r1 = api.init_send_tx(args)?;
+
+    // The streaming channel between 'grinrelay_listener' and 'GrinrelayWalletCommAdapter'
+    let (relay_tx_as_payer, relay_rx) = channel();
+
+    // Start a Grin Relay service firstly
+    let grinrelay_listener = grinrelay_listener(
+        wallet.clone(),
+        config.grinrelay_config.clone().unwrap_or_default(),
+        Some(relay_tx_as_payer),
+        None,
+    )?;
+    thread::sleep(Duration::from_millis(1_000));
+
+    let adapter = GrinrelayWalletCommAdapter::new(grinrelay_listener, relay_rx);
+    match adapter.send_tx_sync(receiver_addr, &slate_r1.clone()) {
+        Ok(mut slate) => {
+            api.verify_slate_messages(&slate)?;
+            api.tx_lock_outputs(&slate_r1, 0)?;
+
+            let finalized_slate = api.finalize_tx(&mut slate);
+            if finalized_slate.is_err() {
+                api.cancel_tx(None, Some(slate_r1.id))?;
+            }
+            let finalized_slate = finalized_slate?;
+
+            let res = api.post_tx(&finalized_slate.tx, false);
+            if res.is_err() {
+                api.cancel_tx(None, Some(slate_r1.id))?;
+                res?;
+            }
+
+            Ok(serde_json::to_string(&finalized_slate).expect("fail to serialize slate to json string"))
+        }
+        Err(e) => {
             Err(Error::from(e))
         }
     }
@@ -482,7 +592,7 @@ fn send_tx(
 pub extern "C" fn grin_send_tx(
     json_cfg: *const c_char,
     amount: u64,
-    receiver_wallet_url: *const c_char,
+    receiver_addr_or_url: *const c_char,
     selection_strategy: *const c_char,
     target_slate_version: i16,
     message: *const c_char,
@@ -493,14 +603,26 @@ pub extern "C" fn grin_send_tx(
         slate_version = Some(target_slate_version as u16);
     }
 
-    let res = send_tx(
-        &cstr_to_str(json_cfg),
-        amount,
-        &cstr_to_str(receiver_wallet_url),
-        &cstr_to_str(selection_strategy),
-        slate_version,
-        &cstr_to_str(message),
-    );
+    let receiver = &cstr_to_str(receiver_addr_or_url);
+    let res = if receiver.starts_with("http://") || receiver.starts_with("https://") {
+        send_tx_by_http(
+            &cstr_to_str(json_cfg),
+            amount,
+            receiver,
+            &cstr_to_str(selection_strategy),
+            slate_version,
+            &cstr_to_str(message),
+        )
+    } else {
+        send_tx_by_relay(
+            &cstr_to_str(json_cfg),
+            amount,
+            receiver,
+            &cstr_to_str(selection_strategy),
+            slate_version,
+            &cstr_to_str(message),
+        )
+    };
     unsafe { result_to_cstr(res, error) }
 }
 
@@ -540,7 +662,7 @@ fn post_tx(json_cfg: &str, tx_slate_id: &str) -> Result<String, Error> {
     let stored_tx = api.get_stored_tx(&txs[0])?;
     match stored_tx {
         Some(stored_tx) => {
-            api.post_tx(&stored_tx, true)?;
+            api.post_tx(&stored_tx, false)?;
             Ok("OK".to_owned())
         }
         None => Err(Error::from(ErrorKind::GenericError(format!(

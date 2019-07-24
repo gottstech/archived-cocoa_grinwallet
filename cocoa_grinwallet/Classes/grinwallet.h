@@ -30,6 +30,7 @@ const char* grin_init_wallet_seed(uint8_t *error);
 const char* grin_wallet_init(
      const char* json_cfg,
      const char* password,
+     bool is_12_phrases,
      uint8_t *error
 );
 
