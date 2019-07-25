@@ -87,6 +87,11 @@ const char* grin_outputs_retrieve(
     uint8_t *error
 );
 
+const char* grin_listen(
+    const char* json_cfg,
+    uint8_t *error
+);
+
 const char* grin_init_tx(
     const char* json_cfg,
     uint64_t amount,

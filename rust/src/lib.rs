@@ -19,7 +19,7 @@ use std::os::raw::c_char;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, TryRecvError};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -32,7 +32,7 @@ use grin_wallet_impls::{
     HTTPWalletCommAdapter, LMDBBackend, GrinrelayWalletCommAdapter, WalletSeed,
 };
 use grin_wallet_libwallet::api_impl::types::InitTxArgs;
-use grin_wallet_libwallet::{NodeClient, WalletInst};
+use grin_wallet_libwallet::{NodeClient, WalletInst, SlateVersion, VersionedSlate};
 use grin_wallet_util::grin_core::global::ChainTypes;
 use grin_wallet_util::grin_keychain::ExtKeychain;
 use grin_wallet_util::grin_util::{file::get_first_line, Mutex, ZeroingString};
@@ -471,6 +471,79 @@ pub extern "C" fn grin_init_tx(
         &cstr_to_str(selection_strategy),
         slate_version,
         &cstr_to_str(message),
+    );
+    unsafe { result_to_cstr(res, error) }
+}
+
+fn listen(
+    json_cfg: &str,
+) -> Result<String, Error> {
+    let config = MobileWalletCfg::from_str(json_cfg)?;
+    let wallet = get_wallet_instance(config.clone())?;
+
+    // The streaming channel between 'grinrelay_listener' and 'foreign_listener'
+    let (relay_tx_as_payee, relay_rx) = channel();
+
+    // Start a Grin Relay service firstly
+    let grinrelay_listener = grinrelay_listener(
+        wallet.clone(),
+        config.grinrelay_config.clone().unwrap_or_default(),
+        None,
+        Some(relay_tx_as_payee),
+    )?;
+
+    let _handle = thread::spawn(move || {
+        let api = Foreign::new(wallet, None);
+        loop {
+            match relay_rx.try_recv() {
+                Ok((addr, slate)) => {
+                    let _slate_id = slate.id;
+                    if api.verify_slate_messages(&slate).is_ok() {
+                        let slate_rx = api.receive_tx(&slate, Some(&config.account), None);
+                        if let Ok(slate_rx) = slate_rx {
+                            let versioned_slate =
+                                VersionedSlate::into_version(slate_rx.clone(), SlateVersion::V2);
+                            let res = grinrelay_listener.publish(&versioned_slate, &addr.to_owned());
+                            match res {
+                                Ok(_) => {
+//                                    info!(
+//                                        "Slate [{}] sent back to {} successfully",
+//                                        slate_id.to_string().bright_green(),
+//                                        addr.bright_green(),
+//                                    );
+                                }
+                                Err(_e) => {
+//                                    error!(
+//                                        "Slate [{}] fail to sent back to {} for {}",
+//                                        slate_id.to_string().bright_green(),
+//                                        addr.bright_green(),
+//                                        e,
+//                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(TryRecvError::Disconnected) => break,
+                Err(TryRecvError::Empty) => {}
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+//    if handle.is_err() {
+//        Err(ErrorKind::GenericError("Listen thread fail to start".to_string()).into())?
+//    }
+    Ok("OK".to_owned())
+}
+
+#[no_mangle]
+pub extern "C" fn grin_listen(
+    json_cfg: *const c_char,
+    error: *mut u8,
+) -> *const c_char {
+    let res = listen(
+        &cstr_to_str(json_cfg),
     );
     unsafe { result_to_cstr(res, error) }
 }
