@@ -1,3 +1,8 @@
+**Important Note**:  
+- This repo has been archived and replaced by the new [cocoa_grinwallet](https://github.com/gottstech/cocoa_grinwallet) repo.
+- The main reason is this repo has commited the three binary libraries which makes the repo bigger and bigger and hard to clone.
+- In the new [cocoa_grinwallet](https://github.com/gottstech/cocoa_grinwallet) repo, the binary libraries will be taken as the "release" assets, and no more commits on binaries.
+
 # cocoa_grinwallet
 IOS Grin Wallet Pod
 
